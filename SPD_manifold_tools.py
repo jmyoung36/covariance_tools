@@ -12,6 +12,13 @@ The algorithms in this script are based on the following references:
 [5] 'A Riemannian  framework  for tensor  computing', Pennec et al, International  Journal  of  Computer  Vision
 [6] 'Log‐Euclidean metrics for fast and simple calculus on diffusion tensors', Arsigny et al., Magnetic Resonance in Medicine
 
+Notation tries to follow the following conventions:
+M, M1, M2...        A Euclidean matrix, indexed Euclidean matrices
+S, S1, S2...        An SPD matrix, indexed SPD matrices
+MM                  A stack of Euclidean matrices. 3rd dimension is n of matrices
+SS                  A stack of SPD matrices. 3rd dimension is n of matrices
+
+
 """
 
 import numpy as np
@@ -20,60 +27,60 @@ import scipy.linalg as la
 # Generate the tangent vector at M2 'pointing toward' M1, where M1 and M2 are both
 # symmetric positive definite matrices in S++. This is the inverse operation of the Exp map.
 # From [1]
-def log_map(M1, M2) :
+def log_map(S1, S2) :
     
-    M2_pos = la.fractional_matrix_power(M2, 0.5)
-    M2_neg = la.fractional_matrix_power(M2, -0.5)
+    S2_pos = la.fractional_matrix_power(S2, 0.5)
+    S2_neg = la.fractional_matrix_power(S2, -0.5)
     #return np.linalg.multi_dot([B_pos, la.logm(np.linalg.multi_dot([B_neg, A, B_neg])), B_pos])
-    log_prod = la.logm(M2_neg.dot(M1).dot(M2_neg))
-    return M2_pos.dot(log_prod).dot(M2_pos)
+    log_prod = la.logm(S2_neg.dot(S1).dot(S2_neg))
+    return S2_pos.dot(log_prod).dot(S2_pos)
     
-# Project the tangent vector at M2 'pointing toward' M1 back into S++, where M1 
-# and M2 are both symmetric positive definite matrices. This is the inverse operation of the Log map.
+# Project the tangent vector at S2 'pointing toward' S1 back into S++, where S1 
+# and S2 are both symmetric positive definite matrices. This is the inverse operation of the Log map.
 # From [1]
-def exp_map(M1, M2) :
+def exp_map(S1, S2) :
     
-    M2_pos = la.fractional_matrix_power(M2, 0.5)
-    M2_neg = la.fractional_matrix_power(M2, -0.5)
+    S2_pos = la.fractional_matrix_power(S2, 0.5)
+    S2_neg = la.fractional_matrix_power(S2, -0.5)
     #return np.linalg.multi_dot([B_pos, la.expm(np.linalg.multi_dot([B_neg, A, B_neg])), B_pos])
-    exp_prod = la.expm(M2_neg.dot(M1).dot(M2_neg))
-    return M2_pos.dot(exp_prod).dot(M2_pos)
+    exp_prod = la.expm(S2_neg.dot(S1).dot(S2_neg))
+    return S2_pos.dot(exp_prod).dot(S2_pos)
 
-# create a geodesic, i.e. local shortest path, from matrix M2 to matrix M1 where 
-# M1 and M2 are both positive definite matrices on S++. Take an optional distance argument 
-# d allowing us to travel e.g. half way from M2 to M1, or twice the distance from
-# M2 to M1.
+# create a geodesic, i.e. local shortest path, from matrix S2 to matrix S1 where 
+# S1 and S2 are both positive definite matrices on S++. Take an optional distance argument 
+# d allowing us to travel e.g. half way from S2 to S1, or twice the distance from
+# S2 to S1.
 # From [1]
-def make_geodesic(M1, M2, d=1):
+def make_geodesic(S1, S2, d=1):
     
-    return exp_map(d * log_map(M1, M2), M2)
+    return exp_map(d * log_map(S1, S2), S2)
 
 # calculate the geometric mean of a set of covariance matrices and use this to project
 # the matrices into the tangent space of the mean matrix
-def project_to_mean_tangent(matrices) :
+def project_to_mean_tangent(SS) :
     
     # find geometric mean
     # construct base covariance matrix by repeated averaging in tangent space
     # first, initialise base covariance matrix
-    base_cov_matrix = np.mean(matrices, axis=0)
+    M_base = np.mean(SS, axis=0)
     
     for i in range(2) :
         
         #print base_cov_matrix[:5, :5]
     
         # project all matrices into the tangent space
-        tangent_matrices = np.zeros_like(matrices)
-        for j in range(len(matrices)) :
+        MM_tangent = np.zeros_like(SS)
+        for j in range(np.shape(SS)[2]) :
         
-            tangent_matrices[j, :, :] = np.linalg.multi_dot([la.fractional_matrix_power(base_cov_matrix, 0.5), la.logm(np.linalg.multi_dot([la.fractional_matrix_power(base_cov_matrix, -0.5), matrices[j, :, :],la.fractional_matrix_power(base_cov_matrix, -0.5)])), la.fractional_matrix_power(base_cov_matrix, 0.5)])
+            MM_tangent[:, :, j] = np.linalg.multi_dot([la.fractional_matrix_power(M_base, 0.5), la.logm(np.linalg.multi_dot([la.fractional_matrix_power(M_base, -0.5), SS[:, :, j],la.fractional_matrix_power(M_base, -0.5)])), la.fractional_matrix_power(M_base, 0.5)])
     
         # calculate the tangent space mean
-        tangent_space_base_cov_matrix = np.mean(tangent_matrices, axis=0)
+        M_tangent_mean = np.mean(MM_tangent, axis=2)
         
         #print tangent_space_base_cov_matrix[:5, :5]
         
         # project new tangent mean back to the manifold
-        base_cov_matrix = np.linalg.multi_dot([la.fractional_matrix_power(base_cov_matrix, 0.5), la.expm(np.linalg.multi_dot([la.fractional_matrix_power(base_cov_matrix, -0.5), tangent_space_base_cov_matrix ,la.fractional_matrix_power(base_cov_matrix, -0.5)])), la.fractional_matrix_power(base_cov_matrix, 0.5)])
+        M_base = np.linalg.multi_dot([la.fractional_matrix_power(M_base, 0.5), la.expm(np.linalg.multi_dot([la.fractional_matrix_power(M_base, -0.5), M_tangent_mean ,la.fractional_matrix_power(M_base, -0.5)])), la.fractional_matrix_power(M_base, 0.5)])
         
     # apply whitening transport and projection for training AND testing data
 #    projected_matrices = np.zeros_like(matrices)   
@@ -83,26 +90,26 @@ def project_to_mean_tangent(matrices) :
 #        projected_matrices[i, :, :] = la.logm(np.linalg.multi_dot([base_cov_matrix_pow, matrices[i, :, :], base_cov_matrix_pow]))
 #       
 #    return projected_matrices
-    return base_cov_matrix
+    return M_base
 
 # calculate the Log-Euclidean mean of a set of n dxd matrices in S++, by applying
 # a matrix logarithm to project the matrices onto the tangent space at I,
 # calculating the arithmetic mean, and then projecting it back into S++.
 # Take a stack of n dxd matrices MM, as a numpy array with dimensions d x d x n
 # From [1]
-def log_Euclidean_mean(MM):
+def log_Euclidean_mean(SS):
     
     # create a structure to store the tangent space matrices
-    logm_MM = np.zeros_like(MM)
+    MM = np.zeros_like(SS)
     
     # project all the matrices in MM into the tangent space
-    for i in range(np.shape(MM)[2]) :
+    for i in range(np.shape(SS)[2]) :
         
-        logm_MM[:, :, i] = np.logm(MM[:, :, i])
+        MM[:, :, i] = np.logm(SS[:, :, i])
         
     # take the mean and project back to S++
-    mean_logm_MM = np.mean(logm_MM, axis=2)
-    return la.expm(mean_logm_MM)
+    MM_mean = np.mean(MM, axis=2)
+    return la.expm(MM_mean)
 
 # calculate the geometric mean of a set of n dxd matrices in S++. In the 
 # general case, initially calculate the Euclidean mean. Then project the
@@ -112,19 +119,19 @@ def log_Euclidean_mean(MM):
 # this new estimate until the estimate converges or the maximum number of 
 # iterations is reached. In the special case of two matrices, the geometric 
 # mean is simply the midpoint of the geodesic joining them.
-# Take a stack of n dxd matrices MM, as a numpy array with dimensions n x d x d
+# Take a stack of n dxd matrices SS, as a numpy array with dimensions d x d x n
 # From [3, 4] for general case and 2 for matrix case respectively 
-def geometric_mean(MM, tol=10e-10, max_iter=50):
+def geometric_mean(SS, tol=10e-10, max_iter=50):
     
     # number of matrices
-    n = np.shape(MM)[0]
+    n = np.shape(SS)[2]
     if n == 2: 
         
         # special case - just take midpoint of geodesic joining the matrices [5]
-        M1 = np.matrix(np.squeeze(MM[0, :, :]))
-        M2 = np.matrix(np.squeeze(MM[1, :, :]))
-        M_mean = M1 ** 0.5 * ((M1 ** -0.5 * M2 ** M1 **-0.5) ** 0.5) * M1 **0.5
-        return M_mean
+        S1 = np.matrix(np.squeeze(SS[:, :, 0]))
+        S2 = np.matrix(np.squeeze(SS[:, :, 1]))
+        S_mean = S1 ** 0.5 * ((S1 ** -0.5 * S2 ** S1 **-0.5) ** 0.5) * S1 **0.5
+        return S_mean
     
     else:
         
@@ -132,7 +139,7 @@ def geometric_mean(MM, tol=10e-10, max_iter=50):
        
         # initialise variables
         # Euclidean mean as first estimate
-        new_est = np.mean(MM, axis=0)
+        new_est = np.mean(SS, axis=2)
         # convergence criterion
         crit = np.finfo(np.float64).max
         k = 0
@@ -148,19 +155,18 @@ def geometric_mean(MM, tol=10e-10, max_iter=50):
             current_est = new_est
         
             # project all the matrices into the tangent space of the current estimate
-            tan_MM = np.zeros_like(MM)
+            MM_tangent = np.zeros_like(SS)
             for i in range(n) :
             
-                #tan_MM[i, :, :] = log_map(current_est, MM[i, :, :])
-                tan_MM[i, :, :] = log_map(MM[i, :, :], current_est)
+                MM_tangent[:, :, i] = log_map(SS[:, :, i], current_est)
             
-            # arithmetic mean in the tangent spacegeometric_mean
-            S = np.mean(tan_MM, axis=0)
+            # arithmetic mean in the tangent space
+            M_tangent_mean = np.mean(MM_tangent, axis=2)
         
             #print S[:5, :5]
         
             # project S back to S++ to create a new estimated mean
-            new_est = exp_map(S, current_est)
+            new_est = exp_map(M_tangent_mean, current_est)
             #new_est = exp_map(current_est, S)
         
             # housekeeping: update k and crit
@@ -177,20 +183,20 @@ def geometric_mean(MM, tol=10e-10, max_iter=50):
 # geodesic to parallel transport the connectivity matrices in the 
 # source dataset to the location of the target dataset with Schild's Ladder.
 # algorith takem from [1]
-def Schilds_ladder(source_mean, target_mean, matrices, n_steps=10) :
+def Schilds_ladder(S_source, S_target, SS, n_steps=10) :
     
     # generate a discretised geodesic with n_steps step, at source_mean and 
     # pointing toward target_mean
-    n_matrices, n_regions, n_regions = np.shape(matrices)
-    disc_geo = np.zeros((n_steps, n_regions, n_regions))
+    n_regions, n_regions, n_matrices = np.shape(SS)
+    disc_geo = np.zeros((n_regions, n_regions, n_steps))
     for i in range(n_steps) :
         
         frac_dist = (i+1)/float(n_steps)
-        disc_geo[i, :, :] = make_geodesic(target_mean, source_mean, frac_dist)
+        disc_geo[:, :, i] = make_geodesic(S_target, S_source, frac_dist)
         
     # initialise the transported matrices
     # copy original matrices BY VALUE 
-    transported_source_dataset = np.copy(matrices)
+    SS_transported = np.copy(SS)
         
     # perform the transport
     print "Performing parallel transport with Schild's ladder..."
@@ -204,13 +210,13 @@ def Schilds_ladder(source_mean, target_mean, matrices, n_steps=10) :
             
             # find the midpoint of the geodesic joining the jth transported
             # source matrix and the i+1th (next) point of disc_geo
-            midpoint = make_geodesic(disc_geo[i+1, :, :], transported_source_dataset[j, :, :], d=0.5)
+            S_midpoint = make_geodesic(disc_geo[:, :, i+1], SS_transported[:, :, j], d=0.5)
             
             # find the new transported source matrix by moving twice the
             # distance from the ith point of disc geo to the midpoint
-            transported_source_dataset[j, :, :] = make_geodesic(midpoint, disc_geo[i, :, :] , d=2.0)
+            SS_transported[:, :, j] = make_geodesic(S_midpoint, disc_geo[:, :, i] , d=2.0)
             
-        print transported_source_dataset[0, :5, :5]
+        print SS_transported[:5, :5, 0]
       
     # final step to the target dataset
     print 'Step ' + str(n_steps) + ' of ' + str(n_steps)
@@ -218,32 +224,32 @@ def Schilds_ladder(source_mean, target_mean, matrices, n_steps=10) :
             
         # find the midpoint of the geodesic joining the jth transported
         # source matrix and the target mean
-        midpoint = make_geodesic(target_mean, transported_source_dataset[j, :, :], d=0.5)
+        S_midpoint = make_geodesic(S_target, SS_transported[:, :, j], d=0.5)
             
         # find the new transported source matrix by moving twice the
         # distance from the ith point of disc geo to the midpoint
-        transported_source_dataset[j, :, :] = make_geodesic(midpoint, disc_geo[n_steps - 1, :, :] , d=2.0)     
+        SS_transported[:, :, j] = make_geodesic(S_midpoint, disc_geo[:, :, n_steps-1] , d=2.0)     
         
-    print transported_source_dataset[0, :5, :5]
+    print SS_transported[:5, :5, 0]
         
     # final output: transported source dataset after n_steps steps
-    return transported_source_dataset
+    return SS_transported
     
-# geodesic distance between two matrices A and B on S++, according to
+# geodesic distance between two matrices S1 and S2 on S++, according to
 # information geometry
 # From [2]
 # AKA affine invariant distance in e.g. [5]
-def IG_distance(A, B) :
+def IG_distance(S1, S2) :
 
-    A_neg = la.fractional_matrix_power(A, -0.5)
-    log_prod = la.logm(A_neg.dot(B).dot(A_neg))
+    S1_neg = la.fractional_matrix_power(S1, -0.5)
+    log_prod = la.logm(S1_neg.dot(S2).dot(S1_neg))
     return np.linalg.norm(log_prod, ord='fro')
     
 # geodesic distance between two matrices A and B on S++, according to log-
 # Euclidean  metric
 # From [6]
-def log_Euclidean_distance(A, B) :
+def log_Euclidean_distance(S1, S2) :
 
-    diff_log = la.logm(A) - la.logm(B)
+    diff_log = la.logm(S1) - la.logm(S2)
     return np.linalg.norm(diff_log, ord='fro')
         
