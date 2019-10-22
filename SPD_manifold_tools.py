@@ -117,15 +117,14 @@ def log_Euclidean_mean(SS):
 # the mean of the projected matrices, and project this back into S++ with 
 # exp_map to provide an updated estimate of the geometric mean. Repeat with 
 # this new estimate until the estimate converges or the maximum number of 
-# iterations is reached. In the special case of two matrices, the geometric 
-# mean is simply the midpoint of the geodesic joining them.
+# iterations is reached. Optionally weight the mean of the projected matrices.
 # Take a stack of n dxd matrices SS, as a numpy array with dimensions n x d x d
 # From [3, 4] for general case and 2 for matrix case respectively 
-def geometric_mean(SS, tol=10e-10, max_iter=50):
+def geometric_mean(SS, tol=10e-10, max_iter=50, weights=None):
     
     # number of matrices
-    n = np.shape(SS)[2]
-    if n == 2: 
+    n = np.shape(SS)[0]
+    if n == 2 and isinstance(weights, type(None)) : 
         
         # special case - just take midpoint of geodesic joining the matrices [5]
         S1 = np.matrix(np.squeeze(SS[0, :, :]))
@@ -139,7 +138,15 @@ def geometric_mean(SS, tol=10e-10, max_iter=50):
        
         # initialise variables
         # Euclidean mean as first estimate
-        new_est = np.mean(SS, axis=0)
+        if isinstance(weights, type(None)) :
+        
+            new_est = np.mean(SS, axis=0)
+            
+        else :
+            
+            # use broadcasting for weighted sum
+            new_est = np.sum(weights[:, np.newaxis, np.newaxis] * SS, axis = 0)
+            
         # convergence criterion
         crit = np.finfo(np.float64).max
         k = 0
@@ -160,8 +167,15 @@ def geometric_mean(SS, tol=10e-10, max_iter=50):
             
                 MM_tangent[i, :, :] = log_map(SS[i, :, :], current_est)
             
-            # arithmetic mean in the tangent space
-            M_tangent_mean = np.mean(MM_tangent, axis=0)
+            # arithmetic (optionally weighted) mean in the tangent space
+            if isinstance(weights, type(None)) :
+                
+                M_tangent_mean = np.mean(MM_tangent, axis=0)
+                
+            else :
+            
+                # use broadcasting for weighted sum
+                M_tangent_mean = np.sum(weights[:, np.newaxis, np.newaxis] * MM_tangent, axis = 0)
         
             #print S[:5, :5]
         
@@ -177,6 +191,61 @@ def geometric_mean(SS, tol=10e-10, max_iter=50):
             print crit
         
         return new_est
+
+# adaptation of local synthethic instances (LSI) method (Brown C.J. et al. 
+# (2015) Prediction of Motor Function in Very Preterm Infants Using Connectome 
+# Features and Local Synthetic Instances)
+# adapted to generate synthetic SPD matrices
+# generate weights and use the geometric_mean method to weight samples in the 
+# tangent space
+# interpolate target variables too in Euclidean space using standard LSI.
+def manifold_LSI(SS, Y, params) :
+    
+    assert isinstance(SS, np.ndarray), 'Input SS must be a Numpy array'
+    assert isinstance(Y, np.ndarray), 'Input Y must by a Numpy array'
+    
+    n = SS.shape[0]
+
+    # get parameters
+    max_num_weighted_samples = params.get('max_num_weighted_samples', np.inf)
+    num_synthetic_instances = params.get('num_synthetic_instances', n)
+    num_weighted_samples = min(n, max_num_weighted_samples)
+    
+    if 'p_range' in params:
+        p_range = params['p_range']
+    else:
+        p_range = (1.2, 3.0)
+        
+    assert len(p_range) == 2, 'p_range must have exactly two elements: (p_min, p_max)'
+    p_min = p_range[0]
+    p_max = p_range[1]
+
+    b = np.array(range(num_weighted_samples)) + 1.0
+
+    # allocate memory for synthetic isntances
+    synth_SS = np.zeros([num_synthetic_instances] + list(SS.shape[1:]))
+    synth_Y = np.zeros([num_synthetic_instances] + list(Y.shape[1:]))
+    
+    for i in range(num_synthetic_instances):
+        
+        # generarate weights
+        t = float(i) / num_synthetic_instances
+        p_val = p_min + t * (p_max - p_min)
+        w = 1.0 / np.power(b, p_val)
+        w /= sum(w)
+
+        # generate random sample of data & labels
+        inds = np.random.permutation(n)[:num_weighted_samples]
+        SS_sample = SS[inds, :, :]
+        Y_sample = Y[inds, :]
+        
+        # make synthetic matrix using weighted geometric_mean
+        synth_SS[i, :, :] = geometric_mean(SS_sample, max_iter=100, weights = w)
+        
+        # make synthetic labels using weighted mean
+        synth_Y [i, :] = np.sum(w[:, np.newaxis] * Y_sample, axis=0)
+
+    return synth_SS, synth_Y
 
 # take a source and a target mean and an SPD connectivity matrix. Generate a 
 # discretised geodesic from the source mean to the target mean. Use this 
@@ -235,7 +304,7 @@ def transport_schilds_ladder(S_source, S_target, SS, n_steps=10) :
     # final output: transported source dataset after n_steps steps
     return SS_transported
     
-# take a source and a target mean and a stack of SPD connectivity matrice. 
+# take a source and a target mean and a stack of SPD connectivity matrices. 
 # Transport the matrices from the source to the target mean with the closed
 # from parallel transport described in [4]
 def transport_yair(S_source, S_target, SS) :
@@ -248,7 +317,7 @@ def transport_yair(S_source, S_target, SS) :
     
     # loop through the matrices to transport each in turn
     # eq 7 in the reference paper
-    for i in range(np.shape(SS)[2]) :
+    for i in range(np.shape(SS)[0]) :
         
         S = SS[i, :, :]
         S_transported = np.dot(np.dot(E, S), np.transpose(E))
