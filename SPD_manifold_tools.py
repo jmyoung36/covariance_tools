@@ -187,8 +187,8 @@ def geometric_mean(SS, tol=10e-10, max_iter=50, weights=None):
             k = k + 1
             #crit = np.linalg.norm(S, ord='fro')
             crit = np.linalg.norm(new_est - current_est, ord='fro')
-            print k
-            print crit
+            print (k)
+            print (crit)
         
         return new_est
 
@@ -268,11 +268,11 @@ def transport_schilds_ladder(S_source, S_target, SS, n_steps=10) :
     SS_transported = np.copy(SS)
         
     # perform the transport
-    print "Performing parallel transport with Schild's ladder..."
+    print ("Performing parallel transport with Schild's ladder...")
     # first n_steps - 1 steps
     for i in range(n_steps - 1) :
         
-        print 'Step ' + str(i+1) + ' of ' + str(n_steps)
+        print ('Step ' + str(i+1) + ' of ' + str(n_steps))
         
         # loop through all the matrices in the transported_source_dataset.
         for j in range(n) :
@@ -285,10 +285,10 @@ def transport_schilds_ladder(S_source, S_target, SS, n_steps=10) :
             # distance from the ith point of disc geo to the midpoint
             SS_transported[j, :, :] = make_geodesic(S_midpoint, disc_geo[i, :, :] , d=2.0)
             
-        print SS_transported[0, :5, :5]
+        print (SS_transported[0, :5, :5])
       
     # final step to the target dataset
-    print 'Step ' + str(n_steps) + ' of ' + str(n_steps)
+    print ('Step ' + str(n_steps) + ' of ' + str(n_steps))
     for j in range(n) :
             
         # find the midpoint of the geodesic joining the jth transported
@@ -299,7 +299,7 @@ def transport_schilds_ladder(S_source, S_target, SS, n_steps=10) :
         # distance from the ith point of disc geo to the midpoint
         SS_transported[j, :, :] = make_geodesic(S_midpoint, disc_geo[n_steps-1, :, :] , d=2.0)     
         
-    print SS_transported[0, :5, :5]
+    print (SS_transported[0, :5, :5])
         
     # final output: transported source dataset after n_steps steps
     return SS_transported
